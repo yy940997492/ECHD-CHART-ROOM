@@ -12,7 +12,48 @@ from ChatWindow import ChatWindow
 import datetime
 import sys
 from UtilsAndConfig import ServerConfig
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from crypto.ecc_key_string import string_to_key, key_to_string, generate_shared_key, ciphertext_to_string, string_to_ciphertext
+from os import urandom
+'''
+先假定是Alice给Bob发消息，Bob知道Alice的公钥，Alice知道Bob的公钥，通过对方的公钥和自己的私钥生成共享密钥，然后用共享密钥加密消息，发送给对方，对方收到消息后，用自己的私钥和对方的公钥生成共享密钥，然后用共享密钥解密消息。
+'''
+alice_private_key_str = '''-----BEGIN PRIVATE KEY-----
+MIG2AgEAMBAGByqGSM49AgEGBSuBBAAiBIGeMIGbAgEBBDBi0E0H6Huq0xUdx/9o
+HScYNhJ6VPyWIALpS0vIKVACd3o1MlohG4pKvVG3SrxqbFWhZANiAATqjCXdOORY
+/hnoZDskNcD5DU0LfsakXEmNJI4n1AWpaxDwVkNxaRu9luyRED4W901f7oGhE3gC
+pFMlFT3YzUS6+CTzLNje9RS0oYziSHlq1Tuh1I2bmSLM8TGaxzaxClU=
+-----END PRIVATE KEY-----'''
+alice_public_key_str = '''-----BEGIN PUBLIC KEY-----
+MHYwEAYHKoZIzj0CAQYFK4EEACIDYgAE6owl3TjkWP4Z6GQ7JDXA+Q1NC37GpFxJ
+jSSOJ9QFqWsQ8FZDcWkbvZbskRA+FvdNX+6BoRN4AqRTJRU92M1Euvgk8yzY3vUU
+tKGM4kh5atU7odSNm5kizPExmsc2sQpV
+-----END PUBLIC KEY-----'''
+bob_private_key_str = '''-----BEGIN PRIVATE KEY-----
+MIG2AgEAMBAGByqGSM49AgEGBSuBBAAiBIGeMIGbAgEBBDBYjZcCGdprT/fJmjUQ
+Z8dAUgKM5BAi/cotNU+fiZiRR2AZnBmaXRAb8umn0Ab6BP6hZANiAATTD5lhj86z
+V89XRNN9wmTEU8DnZR1vSXTmm7RU6ols/k7vSDItU2NNW5Hzgb/vpFblfSYGPptL
+F24THK68XQZuNAGMHJOUiSEbqTtijz5GtauXqDidNeRZOkcWfCXxixQ=
+-----END PRIVATE KEY-----'''
+bob_public_key_str = '''-----BEGIN PUBLIC KEY-----
+MHYwEAYHKoZIzj0CAQYFK4EEACIDYgAE0w+ZYY/Os1fPV0TTfcJkxFPA52Udb0l0
+5pu0VOqJbP5O70gyLVNjTVuR84G/76RW5X0mBj6bSxduExyuvF0GbjQBjByTlIkh
+G6k7Yo8+RrWrl6g4nTXkWTpHFnwl8YsU
+-----END PUBLIC KEY-----'''
 
+
+def aes_encrypt(key, data):
+    nonce = b'Eb\x80\x00\xfeC\x12\xddG\x01d\x1c' # urandom(12)
+    cipher = AESGCM(key)
+    ciphertext = cipher.encrypt(nonce, data, None)
+    return ciphertext
+
+
+def aes_decrypt(key, data):
+    nonce = b'Eb\x80\x00\xfeC\x12\xddG\x01d\x1c' # urandom(12)
+    cipher = AESGCM(key)
+    plaintext = cipher.decrypt(nonce, data, None)
+    return plaintext
 
 class ChatHome:
 
@@ -338,6 +379,20 @@ class ChatHome:
         # self.frame_mid.update()
 
     def chat_send_msg(self, is_friend, to_id, send_time, msg):
+        # Alice的uid是4，BobBob的uid是5
+        if self.User['loginName'] == 'Alice':  # 说明发消息的是Alice,那么就要用BobBob的公钥配合自己的私钥生成共享密钥
+            print(self.User)
+            # 获取Alice的私钥
+            from_private_key, from_public_key = string_to_key(alice_private_key_str, alice_public_key_str)
+            # 获取BobBob的公钥
+            to_private_key, to_public_key = string_to_key(bob_private_key_str, bob_public_key_str)
+            # 生成共享密钥
+            shared_key = generate_shared_key(from_private_key, to_public_key)
+            # 加密消息
+            ciphertext = aes_encrypt(shared_key, msg.encode('utf-8'))
+            ciphertext_str = ciphertext_to_string(ciphertext)
+            msg = ciphertext_str
+            print("ciphertext", msg)
         send_data = {'type': UtilsAndConfig.CHAT_SEND_MSG, 'isFriend': is_friend,
                      'fromId': self.uid, 'toId': to_id,
                      'sendTime': send_time, 'msgText': msg}
@@ -375,7 +430,7 @@ class ChatHome:
     def socket_keep_link_thread(self):
         while True:
             try:
-                back_msg = self.socket.recv(1024).decode()
+                back_msg = self.socket.recv(10240).decode()
                 msg = json.loads(back_msg)
                 # 好友状态改变
                 if msg['type'] == UtilsAndConfig.FRIENDS_ONLINE_CHANGED:
@@ -389,6 +444,19 @@ class ChatHome:
                     self.refresh_message_count()
                 # 有新文本消息， 写入缓存，更新显示
                 if msg['type'] == UtilsAndConfig.CHAT_HAS_NEW_MSG:
+                    if self.User['loginName'] == 'BobBob':  # 说明接收消息的是BobBob,那么就要用BobBob的私钥配合发送方的公钥生成共享密钥
+                        # 获取Alice的私钥
+                        from_private_key, from_public_key = string_to_key(alice_private_key_str, alice_public_key_str)
+                        # 获取BobBob的公钥
+                        to_private_key, to_public_key = string_to_key(bob_private_key_str, bob_public_key_str)
+                        # 生成共享密钥
+                        shared_key = generate_shared_key(from_private_key, to_public_key)
+                        # 解密消息
+                        ciphertext_str = msg['msg_text']
+                        print('ciphertext_str', ciphertext_str)
+                        ciphertext = string_to_ciphertext(ciphertext_str)
+                        plaintext = aes_decrypt(shared_key, ciphertext)
+                        msg['msg_text'] = plaintext.decode('utf-8')
                     from_uid = msg['from_uid']
                     to_id = msg['to_id']
                     is_friend = msg['is_friend']
@@ -412,6 +480,19 @@ class ChatHome:
                             self.frames_group_view[to_id].new_msg_comming()
                 # 发送文本消息成功， 写入本地缓存，更新显示
                 if msg['type'] == UtilsAndConfig.CHAT_SEND_MSG_SUCCESS:
+                    # 获取Alice的私钥
+                    from_private_key, from_public_key = string_to_key(alice_private_key_str, alice_public_key_str)
+                    # 获取BobBob的公钥
+                    to_private_key, to_public_key = string_to_key(bob_private_key_str, bob_public_key_str)
+                    # 生成共享密钥
+                    shared_key = generate_shared_key(from_private_key, to_public_key)
+                    # 解密消息
+                    ciphertext_str = msg['msg_text']
+                    ciphertext = string_to_ciphertext(ciphertext_str)
+                    plaintext = aes_decrypt(shared_key, ciphertext)
+                    msg['msg_text'] = plaintext.decode('utf-8')
+
+
                     from_uid = msg['from_uid']
                     to_id = msg['to_id']
                     send_time = msg['send_time']
