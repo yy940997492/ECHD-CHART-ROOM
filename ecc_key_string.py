@@ -91,36 +91,6 @@ def string_to_key(private_key_str, public_key_str):
     return private_key, public_key
 
 
-def private_key_string_to_key(private_key_str):
-    """
-    将字符串形式的ECC密钥对转化为ECC密钥对
-    :param private_key_str: 字符串形式的ECC私钥
-    :return: ECC私钥和ECC公钥
-    """
-    # 将私钥字符串反序列化为私钥
-    private_key = serialization.load_pem_private_key(
-        data=private_key_str.encode(),
-        password=None
-    )
-    # 返回ECC密钥对
-    return private_key
-
-
-def public_key_string_to_key(public_key_str):
-    """
-    将字符串形式的ECC密钥对转化为ECC密钥对
-    :param public_key_str: 字符串形式的ECC公钥
-    :return: ECC私钥和ECC公钥
-    """
-    # 将私钥字符串反序列化为私钥
-    # 将公钥字符串反序列化为公钥
-    public_key = serialization.load_pem_public_key(
-        data=public_key_str.encode()
-    )
-    # 返回ECC密钥对
-    return public_key
-
-
 # 将密文转化为字符串
 def ciphertext_to_string(ciphertext):
     ciphertext_str = binascii.b2a_hex(ciphertext).decode()

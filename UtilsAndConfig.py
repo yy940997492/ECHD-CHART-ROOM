@@ -131,7 +131,6 @@ def add_one_chat_record(uid, is_friend, from_id, to_id, msg, is_send):
     with open(record_path, 'a', encoding='utf-8') as f:
         f.write('\n' + encode_msg(msg))
 
-
 def check_path(path):
     if not os.path.exists(os.path.dirname(path)):
         os.makedirs(os.path.dirname(path))

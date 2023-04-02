@@ -7,6 +7,11 @@ import json
 from UtilsAndConfig import ServerConfig
 import ChatHome
 import socket
+import ecc_key_string
+
+
+
+
 
 # 定义配置
 serverConfig = ServerConfig()
@@ -94,6 +99,7 @@ def window_register_close_handler():
 
 
 # 注册函数
+# todo:新建公钥表，将公钥存入数据库
 def register():
     var_register_pic_path.set('')
     var_register_login_name.set('')
@@ -156,6 +162,8 @@ def register():
             tkinter.messagebox.showwarning('提示', '密码不一致!')
             return
 
+        private_key, public_key = ecc_key_string.generate_ecc_key()
+        private_key_str, public_key_str = ecc_key_string.key_to_string(private_key, public_key)
         url = SERVER_ADDRESS + '/register'
         files = {'file': open(pic_path, 'rb')}
         params = {
@@ -163,13 +171,20 @@ def register():
             'name': name,
             'sex': sex,
             'pwd1': pwd1,
-            'pwd2': pwd2
+            'pwd2': pwd2,
+            'publicKey': public_key_str,
         }
         button_register_click['state'] = DISABLED
+        # todo:将公钥也发送过去
         r = requests.post(url, data=params, files=files)
         button_register_click['state'] = NORMAL
         result = json.loads(r.text)
         if result['code'] == 200:
+
+            # 将私钥存入本地
+            with open('./static/privatekey/'+login_name, 'w+') as f:
+                f.write(private_key_str)
+
             window_register.destroy()
             root.attributes("-disabled", 0)
             tkinter.messagebox.showwarning('提示', '注册成功，请登录!')

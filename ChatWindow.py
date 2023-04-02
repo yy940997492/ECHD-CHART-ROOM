@@ -8,12 +8,16 @@ import tkinter.font as tf
 import tkinter.filedialog
 import os
 from UtilsAndConfig import ServerConfig
+# 定义配置
+serverConfig = ServerConfig()
+SERVER_ADDRESS = serverConfig.HTTP_SERVER_ADDRESS
 
 
 class ChatWindow(Frame):
 
     def __init__(self, master=None, home_view=None, is_friend=None, uid=None, to_id=None):
         super().__init__(master)
+        # todo:应当添加 to_id 对应的公钥参数
         self.server_config = ServerConfig()
         self.master = master
         self.uid = uid
@@ -563,7 +567,14 @@ class ChatWindow(Frame):
         msg_text = self.chat_msg_text.get('0.0', END).strip()
         if len(msg_text) > 0:
             send_date = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            self.home_view.chat_send_msg(self.is_friend, self.to_id, send_date, msg_text)
+            # todo:添加self.to_id对应的公钥
+            # 查询to_id的公钥
+            url = SERVER_ADDRESS + '/getPubkeyById?uid=' + str(self.to_id)
+            r = requests.get(url)
+            result = json.loads(r.text)
+            data = result['data']
+            pubkey = data['pubkey']
+            self.home_view.chat_send_msg(self.is_friend, self.to_id, send_date, msg_text, pubkey)
 
     def send_msg_event(self, event):
         self.send_msg()

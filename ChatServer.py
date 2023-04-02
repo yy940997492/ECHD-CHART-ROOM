@@ -33,8 +33,10 @@ db = SQLAlchemy(app)
 online_users = dict()
 
 # socket监听
+# 建socket对象
 mySocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 mySocket.bind((serverConfig.SERVER_IP, serverConfig.SOCKET_PORT))
+# 时监听10个
 mySocket.listen(10)
 
 
@@ -93,6 +95,18 @@ class Friends(db.Model):
         }
 
 
+class Publickey(db.Model):
+    __tablename__ = 'publickey'
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    uid = db.Column(db.Integer, nullable=False)
+    pubkey = db.Column(db.String(1024), nullable=False)
+
+    def get_json(self):
+        return {
+            'id': self.id,
+            'uid': self.uid,
+            'pubkey': self.pubkey
+        }
 class GroupChat(db.Model):
     __tablename__ = 'groupChat'
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
@@ -176,6 +190,7 @@ def check_login_name():
 
 
 @app.route('/register', methods=['POST'])
+# todo:存储公钥
 def register():
     try:
         files = request.files['file']
@@ -196,21 +211,28 @@ def register():
         sex = params['sex']
         pwd1 = params['pwd1']
         pwd2 = params['pwd2']
-
+        public_key = params['publicKey']
+        print('public_key:', public_key)
         users = Users.query.filter_by(loginName=login_name).all()
         if len(users) > 0:
             return Result.fail('登录名已存在！')
         if pwd2 != pwd1:
             return Result.fail('重复密码不正确！')
 
-        # 密码md5加密
+        # 密码md5
         md5 = hashlib.md5()
         md5.update(pwd1.encode(encoding='utf-8'))
         password = md5.hexdigest()
 
+        # 写入users表
         users = Users(pwd=password, loginName=login_name, username=name, sex=sex,
                       picUrl=pic_url, updateTime=datetime.datetime.now())
         db.session.add(users)
+        db.session.commit()
+
+        # 写入publickey表
+        publickey = Publickey(uid=users.id, pubkey=public_key)
+        db.session.add(publickey)
         db.session.commit()
         return Result.success('OK')
         pass
@@ -232,6 +254,23 @@ def get_user_by_id():
     except Exception as e:
         print(e.message)
         return Result.fail('参数异常')
+
+
+@app.route('/getPubkeyById', methods=['GET'])
+def get_pubkey_by_id():
+    try:
+        uid = request.args.get("uid")
+        # 查询数据库是否已存在
+        # user = Users.query.filter_by(id=uid).first()
+        pubkey = Publickey.query.filter_by(uid=uid).first()
+        if pubkey is None:
+            return Result.fail('用户不存在！')
+        else:
+            return Result.success(pubkey)
+    except Exception as e:
+        print(e.message)
+        return Result.fail('参数异常')
+
 
 
 @app.route('/getFriendsById', methods=['GET'])
@@ -976,9 +1015,10 @@ def socket_keep_link_thread(connection):
                     from_uid = msg_json['fromId']
                     send_time = msg_json['sendTime']
                     msg_text = msg_json['msgText']
+                    pubkey = msg_json['pubkey']
 
                     data = {'from_uid': from_uid, 'to_id': to_id, 'send_time': send_time, 'msg_text': msg_text,
-                            'is_friend': is_friend, 'type': '', 'msg_type': 'train'}
+                            'is_friend': is_friend, 'type': '', 'msg_type': 'train', 'pubkey': pubkey}
                     # 通知接收方，收到新消息
                     if is_friend == 1:
                         # 好友私聊消息
@@ -1091,6 +1131,7 @@ def socket_keep_link_thread(connection):
 # 主线程
 if __name__ == '__main__':
     try:
+        # 测试数据库链接是否正常
         result = db.session.execute("select 1 as alive")
         print("\033[1;32m", "数据库连接：正常", "\033[0m")
     except Exception as e:
@@ -1100,6 +1141,7 @@ if __name__ == '__main__':
 
     # 启动socket线程
     socketThread = threading.Thread(target=socket_listen_thread)
+    # 设置为守护线程，主线程退出时，子线程也退出
     socketThread.setDaemon(True)
     socketThread.start()
 
@@ -1110,6 +1152,7 @@ if __name__ == '__main__':
     app.debug = False
     server = make_server(serverConfig.SERVER_IP, serverConfig.HTTP_PORT, app)
     try:
+        # 开始监听HTTP请求
         server.serve_forever()
     # 停止运行时，释放flask与socket资源
     except KeyboardInterrupt:
